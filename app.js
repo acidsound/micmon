@@ -1,5 +1,19 @@
 "use strict";
 
+/* 구형 브라우저용 roundRect 폴백 */
+if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r);
+    this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r);
+    this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+    return this;
+  };
+}
+
 /* ============ 상수 ============ */
 const PITCH_MIN_MIDI = 36; // C2
 const PITCH_MAX_MIDI = 84; // C6
@@ -56,6 +70,8 @@ const PITCH_SPAN_MIN = 12;
 const PITCH_SPAN_MAX = PITCH_MAX_MIDI - PITCH_MIN_MIDI; // 48
 const pitchView = { center: (PITCH_MIN_MIDI + PITCH_MAX_MIDI) / 2, span: PITCH_SPAN_MAX };
 let followPitch = false;
+let sliderActive = false; // 줌 슬라이더를 사용자가 조작 중인지
+let renderErrorLogged = false; // 렌더 오류는 한 번만 콘솔에 기록
 
 function clampPitchView() {
   pitchView.span = clamp(pitchView.span, PITCH_SPAN_MIN, PITCH_SPAN_MAX);
@@ -70,13 +86,16 @@ function updatePitchRangeLabel() {
   pitchRangeLabel.textContent =
     midiToNoteName(Math.round(min)) + " – " + midiToNoteName(Math.round(max)) +
     " · " + Math.round(pitchView.span) + "반음";
-  pitchZoomInput.value = String(Math.round(pitchView.span));
+  // 사용자가 슬라이더를 잡고 있는 동안에는 값을 되쓰지 않는다 (드래그 방해 방지)
+  if (!sliderActive) pitchZoomInput.value = String(Math.round(pitchView.span));
 }
 function setPitchView(center, span) {
   pitchView.center = center;
   pitchView.span = span;
   clampPitchView();
   updatePitchRangeLabel();
+  // rAF 루프와 무관하게 즉시 반영 (줌이 화면에 바로 보이도록)
+  try { render(); } catch (e) { console.error("render error:", e); }
 }
 
 function getTimeWindow() { return parseFloat(timeWindowInput.value); }
@@ -517,7 +536,12 @@ function loop() {
       updatePitchRangeLabel();
     }
   }
-  render();
+  // 한 프레임에서 오류가 나도 렌더 루프가 죽지 않도록 보호
+  try {
+    render();
+  } catch (e) {
+    if (!renderErrorLogged) { console.error("render error:", e); renderErrorLogged = true; }
+  }
 }
 
 /* ============ 음정 스크롤/줌 인터랙션 ============ */
@@ -560,8 +584,22 @@ zoomOutBtn.addEventListener("click", () => {
 pitchResetBtn.addEventListener("click", () => {
   setPitchView((PITCH_MIN_MIDI + PITCH_MAX_MIDI) / 2, PITCH_SPAN_MAX);
 });
-pitchZoomInput.addEventListener("input", () => {
+function applyPitchZoomFromSlider() {
   setPitchView(pitchView.center, parseFloat(pitchZoomInput.value));
+}
+pitchZoomInput.addEventListener("input", applyPitchZoomFromSlider);
+pitchZoomInput.addEventListener("change", applyPitchZoomFromSlider);
+pitchZoomInput.addEventListener("pointerdown", () => { sliderActive = true; });
+pitchZoomInput.addEventListener("keydown", () => { sliderActive = true; });
+["pointerup", "pointercancel", "blur", "keyup"].forEach((ev) => {
+  pitchZoomInput.addEventListener(ev, () => {
+    sliderActive = false;
+    updatePitchRangeLabel(); // 슬라이더 위치를 실제 span과 재동기화
+  });
+});
+// 슬라이더 밖에서 포인터를 놓는 경우도 커버
+window.addEventListener("pointerup", () => {
+  if (sliderActive) { sliderActive = false; updatePitchRangeLabel(); }
 });
 followBtn.addEventListener("click", () => {
   followPitch = !followPitch;
