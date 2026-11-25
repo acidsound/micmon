@@ -191,6 +191,48 @@ h1 { margin: 0; font-size: 26px; letter-spacing: -.5px; }
 .pitch-legend { background: linear-gradient(90deg, #3b82f6, #a855f7, #ef4444); }
 .volume-legend { background: linear-gradient(90deg, #3b82f6, #a855f7, #ef4444); }
 
+/* Pitch zoom/scroll controls */
+.pitch-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--panel-border);
+  background: #101828;
+  flex-wrap: wrap;
+}
+.zoom-btn {
+  background: #1e293b;
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  min-width: 34px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s;
+  line-height: 1;
+}
+.zoom-btn:hover { background: #273449; }
+.zoom-btn.wide { font-size: 12px; font-weight: 600; }
+.zoom-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+.pitch-controls input[type="range"] {
+  flex: 1;
+  min-width: 90px;
+  accent-color: var(--accent);
+}
+.pitch-range {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  margin-left: auto;
+}
+#pitchCanvas { cursor: grab; touch-action: none; }
+#pitchCanvas.dragging { cursor: grabbing; }
+
 .canvas-wrap {
   position: relative;
   height: 420px;

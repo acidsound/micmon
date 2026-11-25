@@ -64,6 +64,14 @@
             <span>볼륨 큼</span>
           </div>
         </div>
+        <div class="pitch-controls">
+          <button id="zoomOutBtn" class="zoom-btn" title="줌 아웃">−</button>
+          <input type="range" id="pitchZoom" min="12" max="48" step="1" value="48" title="음정 줌 (12–48반음)" />
+          <button id="zoomInBtn" class="zoom-btn" title="줌 인">+</button>
+          <button id="pitchResetBtn" class="zoom-btn wide" title="전체 보기">전체</button>
+          <button id="followBtn" class="zoom-btn wide" title="현재 음정을 따라 스크롤">🎯 따라가기</button>
+          <span id="pitchRangeLabel" class="pitch-range">C2 – C6 · 48반음</span>
+        </div>
         <div class="canvas-wrap">
           <canvas id="pitchCanvas"></canvas>
           <div id="pitchEmpty" class="empty-state">
@@ -74,7 +82,7 @@
         </div>
         <div class="panel-foot">
           <span>색상 = 볼륨 (파랑 → 빨강)</span>
-          <span id="pitchRangeLabel">C2 – C6 · 반음 그리드</span>
+          <span>드래그: 스크롤 · 휠/핀치: 줌 · 더블클릭: 전체</span>
         </div>
       </section>
 

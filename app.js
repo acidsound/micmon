@@ -30,6 +30,12 @@ const smoothingInput = document.getElementById("smoothing");
 const smoothingVal = document.getElementById("smoothingVal");
 const sensitivityInput = document.getElementById("sensitivity");
 const sensitivityVal = document.getElementById("sensitivityVal");
+const pitchZoomInput = document.getElementById("pitchZoom");
+const zoomInBtn = document.getElementById("zoomInBtn");
+const zoomOutBtn = document.getElementById("zoomOutBtn");
+const pitchResetBtn = document.getElementById("pitchResetBtn");
+const followBtn = document.getElementById("followBtn");
+const pitchRangeLabel = document.getElementById("pitchRangeLabel");
 
 /* ============ 상태 ============ */
 let audioCtx = null;
@@ -44,6 +50,34 @@ let lastSmoothedMidi = null;
 let lastSmoothedDb = null;
 let demoStartTime = 0;
 let lastFrameTime = 0;
+
+/* 음정 뷰: 스크롤/줌 (12반음 ~ 전체 48반음) */
+const PITCH_SPAN_MIN = 12;
+const PITCH_SPAN_MAX = PITCH_MAX_MIDI - PITCH_MIN_MIDI; // 48
+const pitchView = { center: (PITCH_MIN_MIDI + PITCH_MAX_MIDI) / 2, span: PITCH_SPAN_MAX };
+let followPitch = false;
+
+function clampPitchView() {
+  pitchView.span = clamp(pitchView.span, PITCH_SPAN_MIN, PITCH_SPAN_MAX);
+  const half = pitchView.span / 2;
+  pitchView.center = clamp(pitchView.center, PITCH_MIN_MIDI + half, PITCH_MAX_MIDI - half);
+}
+function pitchViewRange() {
+  return { min: pitchView.center - pitchView.span / 2, max: pitchView.center + pitchView.span / 2 };
+}
+function updatePitchRangeLabel() {
+  const { min, max } = pitchViewRange();
+  pitchRangeLabel.textContent =
+    midiToNoteName(Math.round(min)) + " – " + midiToNoteName(Math.round(max)) +
+    " · " + Math.round(pitchView.span) + "반음";
+  pitchZoomInput.value = String(Math.round(pitchView.span));
+}
+function setPitchView(center, span) {
+  pitchView.center = center;
+  pitchView.span = span;
+  clampPitchView();
+  updatePitchRangeLabel();
+}
 
 function getTimeWindow() { return parseFloat(timeWindowInput.value); }
 function getSmoothing() { return parseFloat(smoothingInput.value); }
@@ -227,8 +261,16 @@ function setupCanvas(canvas) {
 const PAD = { left: 58, right: 12, top: 10, bottom: 30 };
 
 function midiToY(midi, plotTop, plotH) {
-  const n = clamp((midi - PITCH_MIN_MIDI) / (PITCH_MAX_MIDI - PITCH_MIN_MIDI), 0, 1);
-  return plotTop + plotH - n * plotH;
+  const { min } = pitchViewRange();
+  return plotTop + plotH - ((midi - min) / pitchView.span) * plotH;
+}
+function yToMidi(y, plotTop, plotH) {
+  const { min } = pitchViewRange();
+  return min + ((plotTop + plotH - y) / plotH) * pitchView.span;
+}
+function isMidiInView(midi) {
+  const { min, max } = pitchViewRange();
+  return midi >= min && midi <= max;
 }
 function dbToY(db, plotTop, plotH) {
   const n = clamp((db - VOL_MIN_DB) / (VOL_MAX_DB - VOL_MIN_DB), 0, 1);
@@ -261,23 +303,25 @@ function drawTimeGrid(ctx, plotLeft, plotTop, plotW, plotH, now, windowSec) {
 
 function drawPitchGrid(ctx, plotLeft, plotTop, plotW, plotH) {
   ctx.save();
-  const total = PITCH_MAX_MIDI - PITCH_MIN_MIDI;
-  const bandH = plotH / total;
+  const { min, max } = pitchViewRange();
+  const mStart = Math.ceil(min);
+  const mEnd = Math.floor(max);
+  const bandH = plotH / pitchView.span;
+  const showAllLabels = pitchView.span <= 24;
 
-  // 건반 배경: 검은 건반 밴드
-  for (let m = PITCH_MIN_MIDI; m < PITCH_MAX_MIDI; m++) {
+  // 건반 배경: 검은 건반 밴드 (뷰 범위만)
+  for (let m = mStart; m < mEnd; m++) {
     const isBlack = BLACK_KEYS.has(((m % 12) + 12) % 12);
+    if (!isBlack) continue;
     const y = midiToY(m + 1, plotTop, plotH);
-    if (isBlack) {
-      ctx.fillStyle = "rgba(255,255,255,0.055)";
-      ctx.fillRect(plotLeft, y, plotW, bandH);
-    }
+    ctx.fillStyle = "rgba(255,255,255,0.055)";
+    ctx.fillRect(plotLeft, y, plotW, bandH);
   }
 
   // 반음 그리드 라인
   ctx.font = "11px -apple-system, sans-serif";
   ctx.textAlign = "right";
-  for (let m = PITCH_MIN_MIDI; m <= PITCH_MAX_MIDI; m++) {
+  for (let m = mStart; m <= mEnd; m++) {
     const y = midiToY(m, plotTop, plotH);
     const isC = ((m % 12) + 12) % 12 === 0;
     const isBlack = BLACK_KEYS.has(((m % 12) + 12) % 12);
@@ -288,7 +332,11 @@ function drawPitchGrid(ctx, plotLeft, plotTop, plotW, plotH) {
     ctx.lineTo(plotLeft + plotW, y);
     ctx.stroke();
 
-    if (isC) {
+    if (showAllLabels) {
+      ctx.fillStyle = isC ? "rgba(226,232,240,0.95)" : "rgba(148,163,184,0.7)";
+      ctx.font = (isC ? "bold " : "") + "10px -apple-system, sans-serif";
+      ctx.fillText(midiToNoteName(m), plotLeft - 8, y + 4);
+    } else if (isC) {
       ctx.fillStyle = "rgba(226,232,240,0.9)";
       ctx.font = "bold 11px -apple-system, sans-serif";
       ctx.fillText(midiToNoteName(m), plotLeft - 8, y + 4);
@@ -298,6 +346,35 @@ function drawPitchGrid(ctx, plotLeft, plotTop, plotW, plotH) {
       ctx.fillText(midiToNoteName(m), plotLeft - 8, y + 4);
     }
   }
+  ctx.restore();
+
+  drawPitchScrollbar(ctx, plotLeft, plotTop, plotW, plotH);
+}
+
+function pitchScrollbarRect(plotLeft, plotTop, plotW, plotH) {
+  const w = 8, h = plotH;
+  const x = plotLeft + plotW - w - 2;
+  const y = plotTop;
+  const total = PITCH_MAX_MIDI - PITCH_MIN_MIDI;
+  const thumbH = Math.max(24, plotH * (pitchView.span / total));
+  const { min } = pitchViewRange();
+  const frac = (min - PITCH_MIN_MIDI) / total;
+  const thumbY = plotTop + plotH - frac * plotH - thumbH;
+  return { x, y, w, h, thumbX: x, thumbY, thumbW: w, thumbH };
+}
+
+function drawPitchScrollbar(ctx, plotLeft, plotTop, plotW, plotH) {
+  if (pitchView.span >= PITCH_SPAN_MAX - 0.01) return; // 전체 보기면 스크롤바 불필요
+  const r = pitchScrollbarRect(plotLeft, plotTop, plotW, plotH);
+  ctx.save();
+  ctx.fillStyle = "rgba(148,163,184,0.15)";
+  ctx.beginPath();
+  ctx.roundRect(r.x, r.y, r.w, r.h, 4);
+  ctx.fill();
+  ctx.fillStyle = "rgba(226,232,240,0.45)";
+  ctx.beginPath();
+  ctx.roundRect(r.thumbX, r.thumbY, r.thumbW, r.thumbH, 4);
+  ctx.fill();
   ctx.restore();
 }
 
@@ -380,9 +457,9 @@ function render() {
     ctx.fillRect(0, 0, w, h);
     drawPitchGrid(ctx, plotLeft, plotTop, plotW, plotH);
     drawTimeGrid(ctx, plotLeft, plotTop, plotW, plotH, now, windowSec);
-    // 음정 그래프: 색상 = 볼륨
+    // 음정 그래프: 색상 = 볼륨 (뷰 밖 구간은 끊김)
     drawTrace(ctx, plotLeft, plotTop, plotW, plotH, now, windowSec,
-      (p) => (p.midi === null ? null : midiToY(p.midi, plotTop, plotH)),
+      (p) => (p.midi === null || !isMidiInView(p.midi) ? null : midiToY(p.midi, plotTop, plotH)),
       (p) => p.volNorm,
       true);
     // 축 테두리
@@ -431,8 +508,152 @@ function loop() {
       pushSample(s.freq, s.db);
     }
   }
+  // 따라가기: 현재 음정이 뷰 밖이면 부드럽게 스크롤
+  if (followPitch && history.length) {
+    const last = history[history.length - 1];
+    if (last && last.midi !== null && !isMidiInView(last.midi)) {
+      pitchView.center += (last.midi - pitchView.center) * 0.15;
+      clampPitchView();
+      updatePitchRangeLabel();
+    }
+  }
   render();
 }
+
+/* ============ 음정 스크롤/줌 인터랙션 ============ */
+function pitchPlotMetrics() {
+  const rect = pitchCanvas.getBoundingClientRect();
+  const plotTop = PAD.top;
+  const plotH = rect.height - PAD.top - PAD.bottom;
+  const plotLeft = PAD.left;
+  const plotW = rect.width - PAD.left - PAD.right;
+  return { rect, plotTop, plotH, plotLeft, plotW };
+}
+
+function zoomAt(cursorY, factor) {
+  const { plotTop, plotH } = pitchPlotMetrics();
+  const cursorMidi = yToMidi(cursorY, plotTop, plotH);
+  const frac = clamp((plotTop + plotH - cursorY) / plotH, 0, 1); // 0=하단, 1=상단
+  const newSpan = clamp(pitchView.span * factor, PITCH_SPAN_MIN, PITCH_SPAN_MAX);
+  const newCenter = cursorMidi - (frac - 0.5) * newSpan;
+  setPitchView(newCenter, newSpan);
+}
+
+pitchCanvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const rect = pitchCanvas.getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  const factor = e.deltaY > 0 ? 1.18 : 1 / 1.18;
+  zoomAt(y, factor);
+}, { passive: false });
+
+pitchCanvas.addEventListener("dblclick", () => {
+  setPitchView((PITCH_MIN_MIDI + PITCH_MAX_MIDI) / 2, PITCH_SPAN_MAX);
+});
+
+zoomInBtn.addEventListener("click", () => {
+  setPitchView(pitchView.center, pitchView.span / 1.5);
+});
+zoomOutBtn.addEventListener("click", () => {
+  setPitchView(pitchView.center, pitchView.span * 1.5);
+});
+pitchResetBtn.addEventListener("click", () => {
+  setPitchView((PITCH_MIN_MIDI + PITCH_MAX_MIDI) / 2, PITCH_SPAN_MAX);
+});
+pitchZoomInput.addEventListener("input", () => {
+  setPitchView(pitchView.center, parseFloat(pitchZoomInput.value));
+});
+followBtn.addEventListener("click", () => {
+  followPitch = !followPitch;
+  followBtn.classList.toggle("active", followPitch);
+});
+
+/* 드래그 스크롤 + 스크롤바 드래그 + 핀치 줌 */
+const activePointers = new Map();
+let dragState = null; // {mode:'pan'|'scrollbar', startY, startCenter, startThumbY}
+let pinchState = null; // {startDist, startSpan, startCenter, midY}
+
+function isOnScrollbar(x, y) {
+  const { plotLeft, plotTop, plotW, plotH } = pitchPlotMetrics();
+  const r = pitchScrollbarRect(plotLeft, plotTop, plotW, plotH);
+  return x >= r.x - 4 && x <= r.x + r.w + 4 && y >= r.y && y <= r.y + r.h;
+}
+
+pitchCanvas.addEventListener("pointerdown", (e) => {
+  pitchCanvas.setPointerCapture(e.pointerId);
+  const rect = pitchCanvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  activePointers.set(e.pointerId, { x, y });
+
+  if (activePointers.size === 2) {
+    const pts = [...activePointers.values()];
+    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    const midY = (pts[0].y + pts[1].y) / 2;
+    pinchState = { startDist: dist, startSpan: pitchView.span, startCenter: pitchView.center, midY };
+    dragState = null;
+    return;
+  }
+  if (isOnScrollbar(x, y)) {
+    const { plotLeft, plotTop, plotW, plotH } = pitchPlotMetrics();
+    const r = pitchScrollbarRect(plotLeft, plotTop, plotW, plotH);
+    dragState = { mode: "scrollbar", startY: y, startCenter: pitchView.center, startThumbY: r.thumbY, plotTop, plotH };
+  } else {
+    dragState = { mode: "pan", startY: y, startCenter: pitchView.center };
+  }
+  pitchCanvas.classList.add("dragging");
+});
+
+pitchCanvas.addEventListener("pointermove", (e) => {
+  if (!activePointers.has(e.pointerId)) return;
+  const rect = pitchCanvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  activePointers.set(e.pointerId, { x, y });
+
+  if (pinchState && activePointers.size === 2) {
+    const pts = [...activePointers.values()];
+    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    if (pinchState.startDist > 0) {
+      const factor = pinchState.startDist / Math.max(1, dist); // 손가락 벌리면 줌 인
+      const { plotTop, plotH } = pitchPlotMetrics();
+      const midY = (pts[0].y + pts[1].y) / 2;
+      const cursorMidi = yToMidi(midY, plotTop, plotH);
+      const frac = clamp((plotTop + plotH - midY) / plotH, 0, 1);
+      const newSpan = clamp(pinchState.startSpan * factor, PITCH_SPAN_MIN, PITCH_SPAN_MAX);
+      const newCenter = cursorMidi - (frac - 0.5) * newSpan;
+      setPitchView(newCenter, newSpan);
+    }
+    return;
+  }
+
+  if (!dragState) return;
+  const { plotTop, plotH } = pitchPlotMetrics();
+  if (dragState.mode === "pan") {
+    const dMidi = ((dragState.startY - y) / plotH) * pitchView.span;
+    setPitchView(dragState.startCenter + dMidi, pitchView.span);
+  } else if (dragState.mode === "scrollbar") {
+    const total = PITCH_MAX_MIDI - PITCH_MIN_MIDI;
+    const thumbH = Math.max(24, plotH * (pitchView.span / total));
+    const trackH = plotH - thumbH;
+    const dy = y - dragState.startY;
+    const dFrac = trackH > 0 ? dy / trackH : 0;
+    // 스크롤바를 아래로 드래그하면 뷰가 아래로 (음정 낮아짐)
+    const dMidi = -dFrac * (total - pitchView.span);
+    setPitchView(dragState.startCenter + dMidi, pitchView.span);
+  }
+});
+
+function endPointer(e) {
+  activePointers.delete(e.pointerId);
+  if (activePointers.size < 2) pinchState = null;
+  if (activePointers.size === 0) {
+    dragState = null;
+    pitchCanvas.classList.remove("dragging");
+  }
+}
+pitchCanvas.addEventListener("pointerup", endPointer);
+pitchCanvas.addEventListener("pointercancel", endPointer);
 
 /* ============ 시작/정지 ============ */
 function setStatus(text, cls) {
@@ -527,4 +748,5 @@ sensitivityInput.addEventListener("input", () => {
 window.addEventListener("resize", render);
 
 /* ============ 초기화 ============ */
+updatePitchRangeLabel();
 loop();
