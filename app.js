@@ -44,7 +44,6 @@ const smoothingInput = document.getElementById("smoothing");
 const smoothingVal = document.getElementById("smoothingVal");
 const sensitivityInput = document.getElementById("sensitivity");
 const sensitivityVal = document.getElementById("sensitivityVal");
-const pitchZoomInput = document.getElementById("pitchZoom");
 const zoomInBtn = document.getElementById("zoomInBtn");
 const zoomOutBtn = document.getElementById("zoomOutBtn");
 const pitchResetBtn = document.getElementById("pitchResetBtn");
@@ -70,8 +69,8 @@ const PITCH_SPAN_MIN = 12;
 const PITCH_SPAN_MAX = PITCH_MAX_MIDI - PITCH_MIN_MIDI; // 48
 const pitchView = { center: (PITCH_MIN_MIDI + PITCH_MAX_MIDI) / 2, span: PITCH_SPAN_MAX };
 let followPitch = false;
-let sliderActive = false; // 줌 슬라이더를 사용자가 조작 중인지
 let renderErrorLogged = false; // 렌더 오류는 한 번만 콘솔에 기록
+let axisHover = false; // 포인터가 y축(줌 영역) 위에 있는지
 
 function clampPitchView() {
   pitchView.span = clamp(pitchView.span, PITCH_SPAN_MIN, PITCH_SPAN_MAX);
@@ -86,8 +85,6 @@ function updatePitchRangeLabel() {
   pitchRangeLabel.textContent =
     midiToNoteName(Math.round(min)) + " – " + midiToNoteName(Math.round(max)) +
     " · " + Math.round(pitchView.span) + "반음";
-  // 사용자가 슬라이더를 잡고 있는 동안에는 값을 되쓰지 않는다 (드래그 방해 방지)
-  if (!sliderActive) pitchZoomInput.value = String(Math.round(pitchView.span));
 }
 function setPitchView(center, span) {
   pitchView.center = center;
@@ -368,6 +365,7 @@ function drawPitchGrid(ctx, plotLeft, plotTop, plotW, plotH) {
   ctx.restore();
 
   drawPitchScrollbar(ctx, plotLeft, plotTop, plotW, plotH);
+  drawAxisZoomHint(ctx, plotLeft, plotTop, plotH);
 }
 
 function pitchScrollbarRect(plotLeft, plotTop, plotW, plotH) {
@@ -395,6 +393,44 @@ function drawPitchScrollbar(ctx, plotLeft, plotTop, plotW, plotH) {
   ctx.roundRect(r.thumbX, r.thumbY, r.thumbW, r.thumbH, 4);
   ctx.fill();
   ctx.restore();
+}
+
+/* y축이 줌 영역임을 알려주는 하이라이트 + 상하 화살표 핸들 */
+function drawAxisZoomHint(ctx, plotLeft, plotTop, plotH) {
+  const active = axisHover || (dragState && dragState.mode === "axisZoom");
+  if (!active) return;
+  ctx.save();
+  ctx.fillStyle = "rgba(99,102,241,0.14)";
+  ctx.fillRect(0, plotTop, plotLeft, plotH);
+  ctx.strokeStyle = "rgba(129,140,248,0.55)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(plotLeft - 0.5, plotTop);
+  ctx.lineTo(plotLeft - 0.5, plotTop + plotH);
+  ctx.stroke();
+
+  const cx = 13;
+  const cy = plotTop + plotH / 2;
+  const ah = 22;
+  ctx.strokeStyle = "rgba(199,210,254,0.95)";
+  ctx.fillStyle = "rgba(199,210,254,0.95)";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - ah);
+  ctx.lineTo(cx, cy + ah);
+  ctx.stroke();
+  arrowHead(ctx, cx, cy - ah, -1);
+  arrowHead(ctx, cx, cy + ah, 1);
+  ctx.restore();
+}
+
+function arrowHead(ctx, x, y, dir) {
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - 4, y - dir * 7);
+  ctx.lineTo(x + 4, y - dir * 7);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function drawVolumeGrid(ctx, plotLeft, plotTop, plotW, plotH) {
@@ -544,7 +580,13 @@ function loop() {
   }
 }
 
-/* ============ 음정 스크롤/줌 인터랙션 ============ */
+/* ============ 음정 스크롤/줌 인터랙션 ============
+   조작 체계
+   - y축(왼쪽 음표 라벨 영역): 휠 / 위아래 드래그 → 줌 (12~48반음)
+   - 그래프 안: 드래그 / 휠 → 세로 스크롤
+   - 오른쪽 스크롤바: 드래그 → 스크롤
+   - 두 손가락 핀치: 줌, 더블클릭: 전체 보기                        */
+
 function pitchPlotMetrics() {
   const rect = pitchCanvas.getBoundingClientRect();
   const plotTop = PAD.top;
@@ -554,67 +596,96 @@ function pitchPlotMetrics() {
   return { rect, plotTop, plotH, plotLeft, plotW };
 }
 
-function zoomAt(cursorY, factor) {
-  const { plotTop, plotH } = pitchPlotMetrics();
-  const cursorMidi = yToMidi(cursorY, plotTop, plotH);
-  const frac = clamp((plotTop + plotH - cursorY) / plotH, 0, 1); // 0=하단, 1=상단
-  const newSpan = clamp(pitchView.span * factor, PITCH_SPAN_MIN, PITCH_SPAN_MAX);
-  const newCenter = cursorMidi - (frac - 0.5) * newSpan;
-  setPitchView(newCenter, newSpan);
+/* y축(줌) 영역: 플롯 왼쪽 여백(음표 라벨이 있는 곳) */
+function isOnAxis(x, y) {
+  const { plotLeft, plotTop, plotH } = pitchPlotMetrics();
+  return x >= 0 && x <= plotLeft && y >= plotTop - 8 && y <= plotTop + plotH + 8;
 }
 
+function isOnScrollbar(x, y) {
+  const { plotLeft, plotTop, plotW, plotH } = pitchPlotMetrics();
+  const r = pitchScrollbarRect(plotLeft, plotTop, plotW, plotH);
+  return x >= r.x - 6 && x <= r.x + r.w + 6 && y >= r.y && y <= r.y + r.h;
+}
+
+/* 커서가 가리키는 음정은 제자리에 두고 배율만 바꾸는 줌 */
+function zoomAt(cursorY, factor) {
+  const { plotTop, plotH } = pitchPlotMetrics();
+  const anchorMidi = yToMidi(cursorY, plotTop, plotH);
+  const anchorFrac = clamp((plotTop + plotH - cursorY) / plotH, 0, 1); // 0=하단, 1=상단
+  const newSpan = clamp(pitchView.span * factor, PITCH_SPAN_MIN, PITCH_SPAN_MAX);
+  setPitchView(anchorMidi - (anchorFrac - 0.5) * newSpan, newSpan);
+}
+
+function panByMidi(dMidi) {
+  setPitchView(pitchView.center + dMidi, pitchView.span);
+}
+
+/* 휠 deltaY(px) → 세로 스크롤. 아래로 굴리면 낮은 음정 방향으로 이동 */
+function panByPixels(dy) {
+  const { plotH } = pitchPlotMetrics();
+  if (plotH > 0) panByMidi(-(dy / plotH) * pitchView.span);
+}
+
+function resetPitchView() {
+  setPitchView((PITCH_MIN_MIDI + PITCH_MAX_MIDI) / 2, PITCH_SPAN_MAX);
+}
+
+function wheelUnits(e) {
+  return e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1; // 라인/페이지 단위 보정
+}
+
+/* --- 휠: y축 위에서는 줌, 그래프 안에서는 스크롤 --- */
 pitchCanvas.addEventListener("wheel", (e) => {
   e.preventDefault();
   const rect = pitchCanvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
-  const factor = e.deltaY > 0 ? 1.18 : 1 / 1.18;
-  zoomAt(y, factor);
+  const dy = e.deltaY * wheelUnits(e);
+  // 트랙패드 핀치는 ctrlKey 휠 이벤트로 전달되므로 어디서든 줌으로 처리
+  if (isOnAxis(x, y) || e.ctrlKey || e.metaKey) {
+    zoomAt(y, Math.pow(1.0022, dy));
+  } else {
+    panByPixels(dy);
+  }
 }, { passive: false });
 
-pitchCanvas.addEventListener("dblclick", () => {
-  setPitchView((PITCH_MIN_MIDI + PITCH_MAX_MIDI) / 2, PITCH_SPAN_MAX);
-});
+pitchCanvas.addEventListener("dblclick", resetPitchView);
 
-zoomInBtn.addEventListener("click", () => {
-  setPitchView(pitchView.center, pitchView.span / 1.5);
-});
-zoomOutBtn.addEventListener("click", () => {
-  setPitchView(pitchView.center, pitchView.span * 1.5);
-});
-pitchResetBtn.addEventListener("click", () => {
-  setPitchView((PITCH_MIN_MIDI + PITCH_MAX_MIDI) / 2, PITCH_SPAN_MAX);
-});
-function applyPitchZoomFromSlider() {
-  setPitchView(pitchView.center, parseFloat(pitchZoomInput.value));
-}
-pitchZoomInput.addEventListener("input", applyPitchZoomFromSlider);
-pitchZoomInput.addEventListener("change", applyPitchZoomFromSlider);
-pitchZoomInput.addEventListener("pointerdown", () => { sliderActive = true; });
-pitchZoomInput.addEventListener("keydown", () => { sliderActive = true; });
-["pointerup", "pointercancel", "blur", "keyup"].forEach((ev) => {
-  pitchZoomInput.addEventListener(ev, () => {
-    sliderActive = false;
-    updatePitchRangeLabel(); // 슬라이더 위치를 실제 span과 재동기화
-  });
-});
-// 슬라이더 밖에서 포인터를 놓는 경우도 커버
-window.addEventListener("pointerup", () => {
-  if (sliderActive) { sliderActive = false; updatePitchRangeLabel(); }
-});
+/* --- 컨트롤 바 버튼 --- */
+zoomInBtn.addEventListener("click", () => setPitchView(pitchView.center, pitchView.span / 1.5));
+zoomOutBtn.addEventListener("click", () => setPitchView(pitchView.center, pitchView.span * 1.5));
+pitchResetBtn.addEventListener("click", resetPitchView);
 followBtn.addEventListener("click", () => {
   followPitch = !followPitch;
   followBtn.classList.toggle("active", followPitch);
 });
 
-/* 드래그 스크롤 + 스크롤바 드래그 + 핀치 줌 */
-const activePointers = new Map();
-let dragState = null; // {mode:'pan'|'scrollbar', startY, startCenter, startThumbY}
-let pinchState = null; // {startDist, startSpan, startCenter, midY}
+/* --- 키보드 (캔버스에 포커스한 상태) --- */
+pitchCanvas.addEventListener("keydown", (e) => {
+  const step = Math.max(0.5, pitchView.span / 12);
+  switch (e.key) {
+    case "ArrowUp": panByMidi(step); e.preventDefault(); break;
+    case "ArrowDown": panByMidi(-step); e.preventDefault(); break;
+    case "PageUp": panByMidi(pitchView.span * 0.9); e.preventDefault(); break;
+    case "PageDown": panByMidi(-pitchView.span * 0.9); e.preventDefault(); break;
+    case "+": case "=": setPitchView(pitchView.center, pitchView.span / 1.5); e.preventDefault(); break;
+    case "-": case "_": setPitchView(pitchView.center, pitchView.span * 1.5); e.preventDefault(); break;
+    case "0": case "Home": resetPitchView(); e.preventDefault(); break;
+    case "f": case "F": followBtn.click(); e.preventDefault(); break;
+    default: return;
+  }
+});
 
-function isOnScrollbar(x, y) {
-  const { plotLeft, plotTop, plotW, plotH } = pitchPlotMetrics();
-  const r = pitchScrollbarRect(plotLeft, plotTop, plotW, plotH);
-  return x >= r.x - 4 && x <= r.x + r.w + 4 && y >= r.y && y <= r.y + r.h;
+/* --- 포인터: 영역별 드래그 + 핀치 줌 --- */
+const activePointers = new Map();
+let dragState = null; // {mode:'pan'|'axisZoom'|'scrollbar', ...}
+let pinchState = null; // {startDist, startSpan}
+
+function updateHover(x, y) {
+  axisHover = isOnAxis(x, y);
+  pitchCanvas.classList.toggle("axis-hover", axisHover);
+  pitchCanvas.classList.toggle("bar-hover", !axisHover && isOnScrollbar(x, y));
 }
 
 pitchCanvas.addEventListener("pointerdown", (e) => {
@@ -624,61 +695,81 @@ pitchCanvas.addEventListener("pointerdown", (e) => {
   const y = e.clientY - rect.top;
   activePointers.set(e.pointerId, { x, y });
 
+  // 두 번째 손가락이 닿으면 핀치 줌으로 전환
   if (activePointers.size === 2) {
     const pts = [...activePointers.values()];
-    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-    const midY = (pts[0].y + pts[1].y) / 2;
-    pinchState = { startDist: dist, startSpan: pitchView.span, startCenter: pitchView.center, midY };
+    pinchState = {
+      startDist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y),
+      startSpan: pitchView.span,
+    };
     dragState = null;
+    pitchCanvas.classList.remove("dragging");
     return;
   }
-  if (isOnScrollbar(x, y)) {
-    const { plotLeft, plotTop, plotW, plotH } = pitchPlotMetrics();
-    const r = pitchScrollbarRect(plotLeft, plotTop, plotW, plotH);
-    dragState = { mode: "scrollbar", startY: y, startCenter: pitchView.center, startThumbY: r.thumbY, plotTop, plotH };
+
+  if (isOnAxis(x, y)) {
+    // y축 드래그 = 줌: 잡은 음정은 손끝에 붙어 있고 배율만 변함
+    const { plotTop, plotH } = pitchPlotMetrics();
+    dragState = {
+      mode: "axisZoom",
+      startY: y,
+      startSpan: pitchView.span,
+      anchorMidi: yToMidi(y, plotTop, plotH),
+      anchorFrac: clamp((plotTop + plotH - y) / plotH, 0, 1),
+    };
+    axisHover = true;
+    pitchCanvas.classList.add("axis-hover");
+    pitchCanvas.classList.remove("dragging", "bar-hover");
+  } else if (isOnScrollbar(x, y)) {
+    dragState = { mode: "scrollbar", startY: y, startCenter: pitchView.center };
+    pitchCanvas.classList.add("bar-hover");
+    pitchCanvas.classList.remove("dragging", "axis-hover");
   } else {
+    // 그래프 안 드래그 = 스크롤
     dragState = { mode: "pan", startY: y, startCenter: pitchView.center };
+    pitchCanvas.classList.add("dragging");
+    pitchCanvas.classList.remove("axis-hover", "bar-hover");
   }
-  pitchCanvas.classList.add("dragging");
 });
 
 pitchCanvas.addEventListener("pointermove", (e) => {
-  if (!activePointers.has(e.pointerId)) return;
   const rect = pitchCanvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
+
+  if (!activePointers.has(e.pointerId)) { updateHover(x, y); return; } // 단순 호버
   activePointers.set(e.pointerId, { x, y });
 
+  // 핀치 줌
   if (pinchState && activePointers.size === 2) {
     const pts = [...activePointers.values()];
     const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-    if (pinchState.startDist > 0) {
-      const factor = pinchState.startDist / Math.max(1, dist); // 손가락 벌리면 줌 인
-      const { plotTop, plotH } = pitchPlotMetrics();
+    if (pinchState.startDist > 0 && dist > 0) {
       const midY = (pts[0].y + pts[1].y) / 2;
-      const cursorMidi = yToMidi(midY, plotTop, plotH);
-      const frac = clamp((plotTop + plotH - midY) / plotH, 0, 1);
-      const newSpan = clamp(pinchState.startSpan * factor, PITCH_SPAN_MIN, PITCH_SPAN_MAX);
-      const newCenter = cursorMidi - (frac - 0.5) * newSpan;
-      setPitchView(newCenter, newSpan);
+      const targetSpan = clamp(pinchState.startSpan * (pinchState.startDist / dist), PITCH_SPAN_MIN, PITCH_SPAN_MAX);
+      zoomAt(midY, targetSpan / pitchView.span);
     }
     return;
   }
 
   if (!dragState) return;
   const { plotTop, plotH } = pitchPlotMetrics();
+
   if (dragState.mode === "pan") {
+    // 손가락을 따라 내용이 움직이도록
     const dMidi = ((dragState.startY - y) / plotH) * pitchView.span;
     setPitchView(dragState.startCenter + dMidi, pitchView.span);
+  } else if (dragState.mode === "axisZoom") {
+    // y축을 위로 드래그하면 줌 인, 아래로 드래그하면 줌 아웃 (160px = 2배)
+    const dy = y - dragState.startY;
+    const targetSpan = clamp(dragState.startSpan * Math.pow(2, dy / 160), PITCH_SPAN_MIN, PITCH_SPAN_MAX);
+    setPitchView(dragState.anchorMidi - (dragState.anchorFrac - 0.5) * targetSpan, targetSpan);
   } else if (dragState.mode === "scrollbar") {
     const total = PITCH_MAX_MIDI - PITCH_MIN_MIDI;
     const thumbH = Math.max(24, plotH * (pitchView.span / total));
     const trackH = plotH - thumbH;
-    const dy = y - dragState.startY;
-    const dFrac = trackH > 0 ? dy / trackH : 0;
-    // 스크롤바를 아래로 드래그하면 뷰가 아래로 (음정 낮아짐)
-    const dMidi = -dFrac * (total - pitchView.span);
-    setPitchView(dragState.startCenter + dMidi, pitchView.span);
+    const dFrac = trackH > 0 ? (y - dragState.startY) / trackH : 0;
+    setPitchView(dragState.startCenter - dFrac * (total - pitchView.span), pitchView.span);
   }
 });
 
@@ -688,10 +779,18 @@ function endPointer(e) {
   if (activePointers.size === 0) {
     dragState = null;
     pitchCanvas.classList.remove("dragging");
+    const rect = pitchCanvas.getBoundingClientRect();
+    updateHover(e.clientX - rect.left, e.clientY - rect.top);
   }
 }
 pitchCanvas.addEventListener("pointerup", endPointer);
 pitchCanvas.addEventListener("pointercancel", endPointer);
+pitchCanvas.addEventListener("pointerleave", () => {
+  if (!dragState) {
+    axisHover = false;
+    pitchCanvas.classList.remove("axis-hover", "bar-hover");
+  }
+});
 
 /* ============ 시작/정지 ============ */
 function setStatus(text, cls) {
