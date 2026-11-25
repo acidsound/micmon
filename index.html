@@ -64,17 +64,8 @@
             <span>볼륨 큼</span>
           </div>
         </div>
-        <div class="pitch-controls">
-          <span class="pitch-zoom-label">줌</span>
-          <button id="zoomOutBtn" class="zoom-btn" title="줌 아웃">−</button>
-          <button id="zoomInBtn" class="zoom-btn" title="줌 인">+</button>
-          <button id="pitchResetBtn" class="zoom-btn wide" title="전체 보기">전체</button>
-          <button id="followBtn" class="zoom-btn wide" title="현재 음정을 따라 스크롤">🎯 따라가기</button>
-          <span id="pitchRangeLabel" class="pitch-range">C2 – C6 · 48반음</span>
-        </div>
         <div class="canvas-wrap">
-          <canvas id="pitchCanvas" tabindex="0" role="application"
-            aria-label="음정 그래프. 세로축에서 휠이나 드래그로 줌, 그래프 안에서 드래그로 스크롤"></canvas>
+          <canvas id="pitchCanvas"></canvas>
           <div id="pitchEmpty" class="empty-state">
             <div class="empty-icon">🎼</div>
             <p>Record 시작 버튼을 눌러<br/>마이크 입력을 모니터하세요</p>
@@ -83,7 +74,7 @@
         </div>
         <div class="panel-foot">
           <span>색상 = 볼륨 (파랑 → 빨강)</span>
-          <span>y축: 줌 · 그래프 드래그: 스크롤 · 더블클릭: 전체</span>
+          <span id="pitchRangeLabel">C2 – C6 · 반음 그리드</span>
         </div>
       </section>
 
@@ -131,6 +122,6 @@
     </section>
   </div>
 
-  <script src="app.js?v=3"></script>
+  <script src="app.js"></script>
 </body>
 </html>

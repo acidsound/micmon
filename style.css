@@ -191,49 +191,6 @@ h1 { margin: 0; font-size: 26px; letter-spacing: -.5px; }
 .pitch-legend { background: linear-gradient(90deg, #3b82f6, #a855f7, #ef4444); }
 .volume-legend { background: linear-gradient(90deg, #3b82f6, #a855f7, #ef4444); }
 
-/* Pitch zoom/scroll controls */
-.pitch-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--panel-border);
-  background: #101828;
-  flex-wrap: wrap;
-}
-.zoom-btn {
-  background: #1e293b;
-  color: var(--text);
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  min-width: 34px;
-  height: 32px;
-  padding: 0 10px;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background .15s;
-  line-height: 1;
-}
-.zoom-btn:hover { background: #273449; }
-.zoom-btn.wide { font-size: 12px; font-weight: 600; }
-.zoom-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
-.pitch-zoom-label { font-size: 12px; color: var(--muted); font-weight: 600; }
-.pitch-range {
-  font-size: 12px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  margin-left: auto;
-}
-
-/* 음정 캔버스 조작 커서: 그래프 안 = 스크롤(grab), y축 = 줌(ns-resize) */
-#pitchCanvas { cursor: grab; touch-action: none; outline: none; }
-#pitchCanvas.dragging { cursor: grabbing; }
-#pitchCanvas.axis-hover { cursor: ns-resize; }
-#pitchCanvas.bar-hover { cursor: pointer; }
-#pitchCanvas:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
-
 .canvas-wrap {
   position: relative;
   height: 420px;
