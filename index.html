@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MicMon — 실시간 음정·볼륨 모니터</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="title-wrap">
+        <div class="logo">🎙️</div>
+        <div>
+          <h1>MicMon</h1>
+          <p class="subtitle">WebAudio 실시간 음정 · 볼륨 모니터</p>
+        </div>
+      </div>
+      <div class="status-wrap">
+        <span id="statusDot" class="status-dot idle"></span>
+        <span id="statusText" class="status-text">대기 중</span>
+      </div>
+    </header>
+
+    <section class="control-bar">
+      <button id="recordBtn" class="record-btn">
+        <span class="rec-icon">●</span>
+        <span id="recordLabel">Record 시작</span>
+      </button>
+      <button id="demoBtn" class="ghost-btn">데모 모드</button>
+      <button id="clearBtn" class="ghost-btn">지우기</button>
+
+      <div class="readouts">
+        <div class="readout">
+          <label>현재 음정</label>
+          <strong id="noteValue">—</strong>
+          <span id="freqValue" class="sub">— Hz</span>
+        </div>
+        <div class="readout">
+          <label>볼륨</label>
+          <strong id="volValue">— dB</strong>
+          <span id="centsValue" class="sub">— cents</span>
+        </div>
+        <div class="readout meter">
+          <label>튠 게이지</label>
+          <div class="tuner">
+            <div class="tuner-track">
+              <div class="tuner-center"></div>
+              <div id="tunerNeedle" class="tuner-needle"></div>
+            </div>
+            <div class="tuner-labels"><span>♭</span><span>♮</span><span>♯</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <main class="graphs">
+      <section class="panel pitch-panel">
+        <div class="panel-head">
+          <h2>🎵 음정 <span class="en">Pitch</span></h2>
+          <div class="legend">
+            <span>볼륨 작음</span>
+            <span class="legend-bar pitch-legend"></span>
+            <span>볼륨 큼</span>
+          </div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="pitchCanvas"></canvas>
+          <div id="pitchEmpty" class="empty-state">
+            <div class="empty-icon">🎼</div>
+            <p>Record 시작 버튼을 눌러<br/>마이크 입력을 모니터하세요</p>
+            <p class="hint">세로축: 피아노 건반 기준 음정 (C2–C6)<br/>가로축: 시간 (공통)</p>
+          </div>
+        </div>
+        <div class="panel-foot">
+          <span>색상 = 볼륨 (파랑 → 빨강)</span>
+          <span id="pitchRangeLabel">C2 – C6 · 반음 그리드</span>
+        </div>
+      </section>
+
+      <section class="panel volume-panel">
+        <div class="panel-head">
+          <h2>🔊 볼륨 <span class="en">Volume</span></h2>
+          <div class="legend">
+            <span>음정 낮음</span>
+            <span class="legend-bar volume-legend"></span>
+            <span>음정 높음</span>
+          </div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="volumeCanvas"></canvas>
+          <div id="volumeEmpty" class="empty-state">
+            <div class="empty-icon">📈</div>
+            <p>Record 시작 버튼을 눌러<br/>마이크 입력을 모니터하세요</p>
+            <p class="hint">세로축: 볼륨 (dBFS)<br/>가로축: 시간 (공통)</p>
+          </div>
+        </div>
+        <div class="panel-foot">
+          <span>색상 = 음정 (파랑 → 빨강)</span>
+          <span>-60 – 0 dB</span>
+        </div>
+      </section>
+    </main>
+
+    <section class="settings">
+      <div class="setting">
+        <label for="timeWindow">시간 윈도우 <strong id="timeWindowVal">10초</strong></label>
+        <input type="range" id="timeWindow" min="5" max="20" step="1" value="10" />
+      </div>
+      <div class="setting">
+        <label for="smoothing">스무딩 <strong id="smoothingVal">0.3</strong></label>
+        <input type="range" id="smoothing" min="0" max="0.9" step="0.1" value="0.3" />
+      </div>
+      <div class="setting">
+        <label for="sensitivity">감도 <strong id="sensitivityVal">1.0x</strong></label>
+        <input type="range" id="sensitivity" min="0.5" max="3" step="0.1" value="1" />
+      </div>
+      <p class="help">
+        💡 마이크 권한이 필요합니다. 브라우저 주소창의 마이크 아이콘을 허용해 주세요.
+        마이크가 없을 경우 <b>데모 모드</b>로 그래프 동작을 확인할 수 있습니다.
+      </p>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
